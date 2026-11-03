@@ -256,6 +256,41 @@ app.patch('/update-event/:id', async (req, res) => {
 })
 
 
+app.delete('/delete-event/:id', async (req, res) => {
+
+  const user = await getSessionUser(req)
+
+  if (!user) {
+    return res.status(401).send({
+      message: "You must be logged in to delete an event."
+    })
+  }
+
+  const { id } = req.params
+
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).send({
+      message: "Invalid event ID."
+    })
+  }
+
+  const result = await eventCollection?.deleteOne({
+    _id: new ObjectId(id),
+    creatorEmail: user.email
+  })
+
+  if (result?.deletedCount === 0) {
+    return res.status(404).send({
+      message: "Event not found."
+    })
+  }
+
+  res.send({
+    message: "Event deleted successfully."
+  })
+})
+
+
 
 app.get('/', (req, res) => {
   res.send({ message: 'Server is running fine' })
