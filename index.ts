@@ -63,7 +63,19 @@ const getSessionUser = async (req: express.Request) => {
 
 app.post('/create-event', async (req, res) => {
 
-  const data = req.body
+  const user = await getSessionUser(req)
+
+  if (!user) {
+    return res.status(401).send({
+      message: "You must be logged in to create an event."
+    })
+  }
+
+  const data = {
+    ...req.body,
+    creatorEmail: user.email,
+    createdAt: new Date().toISOString(),
+  }
 
   const result = await eventCollection?.insertOne(data)
 
