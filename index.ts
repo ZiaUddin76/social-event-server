@@ -185,6 +185,26 @@ app.get('/joined-events', async (req, res) => {
 })
 
 
+app.get('/my-events', async (req, res) => {
+
+    const user = await getSessionUser(req)
+
+    if (!user) {
+        return res.status(401).send({
+            message: "You must be logged in to view your events."
+        })
+    }
+
+    const result = await eventCollection
+    ?.find({ creatorEmail: user.email })
+    .sort({ eventDate: 1 })
+    .toArray()
+
+    res.send(result)
+})
+
+
+
 app.get('/', (req, res) => {
   res.send({ message: 'Server is running fine' })
 })
