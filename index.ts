@@ -61,6 +61,8 @@ const getSessionUser = async (req: express.Request) => {
 }
 
 
+
+
 app.post('/create-event', async (req, res) => {
 
   const user = await getSessionUser(req)
@@ -71,22 +73,166 @@ app.post('/create-event', async (req, res) => {
     })
   }
 
+  const {
+    title,
+    eventType,
+    description,
+    image,
+    location,
+    eventDate,
+  } = req.body
+
+  // Validate title
+  if (
+    typeof title !== "string" ||
+    title.trim().length < 5 ||
+    title.trim().length > 100
+  ) {
+    return res.status(400).send({
+      message: "Title must be between 5 and 100 characters."
+    })
+  }
+
+  // Validate event type
+  const eventTypes = [
+    "Cleanup",
+    "Plantation",
+    "Donation",
+    "Awareness",
+    "Community Service",
+    "Education",
+    "Other",
+  ]
+
+  if (
+    typeof eventType !== "string" ||
+    !eventTypes.includes(eventType)
+  ) {
+    return res.status(400).send({
+      message: "Please select a valid event type."
+    })
+  }
+
+  // Validate description
+  if (
+    typeof description !== "string" ||
+    description.trim().length < 20 ||
+    description.trim().length > 1000
+  ) {
+    return res.status(400).send({
+      message: "Description must be between 20 and 1000 characters."
+    })
+  }
+
+  // Validate location
+  if (
+    typeof location !== "string" ||
+    location.trim().length < 3 ||
+    location.trim().length > 150
+  ) {
+    return res.status(400).send({
+      message: "Location must be between 3 and 150 characters."
+    })
+  }
+
+  // Validate image URL
+  if (typeof image !== "string" || !image.trim()) {
+    return res.status(400).send({
+      message: "Please provide an image URL."
+    })
+  }
+
+  try {
+    const imageUrl = new URL(image.trim())
+
+    if (
+      imageUrl.protocol !== "http:" &&
+      imageUrl.protocol !== "https:"
+    ) {
+      throw new Error("Invalid image URL")
+    }
+  } catch {
+    return res.status(400).send({
+      message: "Please provide a valid image URL."
+    })
+  }
+
+  // Validate event date
+  if (
+    typeof eventDate !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(eventDate)
+  ) {
+    return res.status(400).send({
+      message: "Please provide a valid event date."
+    })
+  }
+
+  const [year, month, day] = eventDate.split("-").map(Number)
+
+  const selectedDate = new Date(
+    Date.UTC(year, month - 1, day)
+  )
+
+  const isValidDate =
+    selectedDate.getUTCFullYear() === year &&
+    selectedDate.getUTCMonth() === month - 1 &&
+    selectedDate.getUTCDate() === day
+
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+
+  const minimumDate = [
+    tomorrow.getFullYear(),
+    String(tomorrow.getMonth() + 1).padStart(2, "0"),
+    String(tomorrow.getDate()).padStart(2, "0"),
+  ].join("-")
+
+  if (
+    !isValidDate ||
+    eventDate < minimumDate
+  ) {
+    return res.status(400).send({
+      message: "Event date must be tomorrow or later."
+    })
+  }
+
+  // Prepare validated event data
   const data = {
-    ...req.body,
+    title: title.trim(),
+    eventType,
+    description: description.trim(),
+    image: image.trim(),
+    location: location.trim(),
+    eventDate,
     creatorEmail: user.email,
     createdAt: new Date().toISOString(),
   }
 
   const result = await eventCollection?.insertOne(data)
 
-  console.log(result);
+  console.log(result)
 
   res.send(result)
 })
 
 
+
+
 app.get('/events', async (req, res) => {
-  const result = await eventCollection?.find().toArray()
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const todayString = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, "0"),
+    String(today.getDate()).padStart(2, "0"),
+  ].join("-")
+
+  const result = await eventCollection
+    ?.find({ eventDate: { $gte: todayString } })
+    .sort({ eventDate: 1 })
+    .toArray()
+
   res.send(result)
 })
 
@@ -94,9 +240,21 @@ app.get('/events', async (req, res) => {
 app.get('/event/:id', async (req, res) => {
   const { id } = req.params
 
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).send({
+      message: "Invalid event ID."
+    })
+  }
+
   const result = await eventCollection?.findOne({
     _id: new ObjectId(id)
   })
+
+  if (!result) {
+    return res.status(404).send({
+      message: "Event not found."
+    })
+  }
 
   res.send(result)
 })
@@ -215,6 +373,7 @@ app.patch('/update-event/:id', async (req, res) => {
     })
   }
 
+
   const { id } = req.params
 
   if (!ObjectId.isValid(id)) {
@@ -225,12 +384,115 @@ app.patch('/update-event/:id', async (req, res) => {
 
   const { title, eventType, description, image, location, eventDate } = req.body
 
+  // Validate title
+  if (
+    typeof title !== "string" ||
+    title.trim().length < 5 ||
+    title.trim().length > 100
+  ) {
+    return res.status(400).send({
+      message: "Title must be between 5 and 100 characters."
+    })
+  }
+
+  // Validate event type
+  const allowedEventTypes = [
+    "Cleanup",
+    "Plantation",
+    "Donation",
+    "Awareness",
+    "Community Service",
+    "Education",
+    "Other"
+  ]
+
+  if (!allowedEventTypes.includes(eventType)) {
+    return res.status(400).send({
+      message: "Invalid event type."
+    })
+  }
+
+  // Validate description
+  if (
+    typeof description !== "string" ||
+    description.trim().length < 20 ||
+    description.trim().length > 1000
+  ) {
+    return res.status(400).send({
+      message: "Description must be between 20 and 1000 characters."
+    })
+  }
+
+  // Validate location
+  if (
+    typeof location !== "string" ||
+    location.trim().length < 3 ||
+    location.trim().length > 150
+  ) {
+    return res.status(400).send({
+      message: "Location must be between 3 and 150 characters."
+    })
+  }
+
+  // Validate image URL
+  try {
+    const imageUrl = new URL(image)
+
+    if (
+      typeof image !== "string" ||
+      !["http:", "https:"].includes(imageUrl.protocol)
+    ) {
+      throw new Error("Invalid image URL")
+    }
+  } catch {
+    return res.status(400).send({
+      message: "Please provide a valid image URL."
+    })
+  }
+
+  // Validate event date
+  if (
+    typeof eventDate !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(eventDate)
+  ) {
+    return res.status(400).send({
+      message: "Please provide a valid event date."
+    })
+  }
+
+  const [year, month, day] = eventDate.split("-").map(Number)
+
+  const selectedDate = new Date(
+    Date.UTC(year, month - 1, day)
+  )
+
+  const isValidDate =
+    selectedDate.getUTCFullYear() === year &&
+    selectedDate.getUTCMonth() === month - 1 &&
+    selectedDate.getUTCDate() === day
+
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+
+  const minimumDate = [
+    tomorrow.getFullYear(),
+    String(tomorrow.getMonth() + 1).padStart(2, "0"),
+    String(tomorrow.getDate()).padStart(2, "0"),
+  ].join("-")
+
+  if (!isValidDate || eventDate < minimumDate) {
+    return res.status(400).send({
+      message: "Event date must be tomorrow or later."
+    })
+  }
+
+
   const updatedData = {
-    title,
+    title: title.trim(),
     eventType,
-    description,
+    description: description.trim(),
     image,
-    location,
+    location: location.trim(),
     eventDate,
   }
 
@@ -295,6 +557,10 @@ app.delete('/delete-event/:id', async (req, res) => {
 app.get('/', (req, res) => {
   res.send({ message: 'Server is running fine' })
 })
+
+
+
+
 
 app.listen(PORT, () => {
   console.log(`Server is running at ${PORT}`)
