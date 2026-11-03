@@ -5,6 +5,7 @@ import cors from "cors"
 import { betterAuth } from "better-auth"
 import { mongodbAdapter } from "@better-auth/mongo-adapter"
 import { fromNodeHeaders } from "better-auth/node"
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 
 const app = express()
@@ -39,6 +40,38 @@ const eventCollection = db?.collection("event")
 const joinedEvent = db?.collection("joined")
 
 
+const verifyToken = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  
+  if(!authHeader) {
+    return res.status(401).send({ msg: "Unauthorized!" });
+  }
+
+  const token = authHeader.split(" ")[1]
+
+  if(!token) {
+    return res.status(401).send({ msg: "Unauthorized!" });
+  }
+
+
+  const JWKS = createRemoteJWKSet(new URL('http://localhost:3000/api/auth/jwks'))
+
+
+  try {
+    const {payload} = await jwtVerify(token, JWKS)
+  } catch (error) {
+    return res.status(500).send({ msg: "Server Error!" });
+  }
+
+
+
+  next();
+
+};
+
+
+
+
 // Same better-auth setup as the Next.js app (same database and secret),
 // so the session cookie created by the web app can be verified here.
 const auth = betterAuth({
@@ -63,7 +96,9 @@ const getSessionUser = async (req: express.Request) => {
 
 
 
-app.post('/create-event', async (req, res) => {
+app.post('/create-event',
+  verifyToken,
+  async (req, res) => {
 
   const user = await getSessionUser(req)
 
@@ -237,7 +272,8 @@ app.get('/events', async (req, res) => {
 })
 
 
-app.get('/event/:id', async (req, res) => {
+app.get('/event/:id',
+  async (req, res) => {
   const { id } = req.params
 
   if (!ObjectId.isValid(id)) {
@@ -261,7 +297,9 @@ app.get('/event/:id', async (req, res) => {
 
 
 // Join an event - only logged in users can join
-app.post('/join-event', async (req, res) => {
+app.post('/join-event',
+  verifyToken,
+  async (req, res) => {
 
   const user = await getSessionUser(req)
 
@@ -308,7 +346,9 @@ app.post('/join-event', async (req, res) => {
 
 
 // Check if the logged in user has already joined an event
-app.get('/event/:id/joined', async (req, res) => {
+app.get('/event/:id/joined',
+  verifyToken,
+  async (req, res) => {
 
   const user = await getSessionUser(req)
 
@@ -326,7 +366,9 @@ app.get('/event/:id/joined', async (req, res) => {
 
 
 // All events joined by the logged in user - newest first
-app.get('/joined-events', async (req, res) => {
+app.get('/joined-events',
+  verifyToken,
+  async (req, res) => {
 
   const user = await getSessionUser(req)
 
@@ -363,7 +405,9 @@ app.get('/my-events', async (req, res) => {
 
 
 
-app.patch('/update-event/:id', async (req, res) => {
+app.patch('/update-event/:id',
+  verifyToken,
+  async (req, res) => {
 
   const user = await getSessionUser(req)
 
@@ -559,7 +603,23 @@ app.get('/', (req, res) => {
 })
 
 
+// Global error-handling middleware
+app.use((
+  err: Error,
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) => {
+  console.error("Server Error:", err)
 
+  if (res.headersSent) {
+    return next(err)
+  }
+
+  res.status(500).send({
+    message: "Internal server error."
+  })
+})
 
 
 app.listen(PORT, () => {
