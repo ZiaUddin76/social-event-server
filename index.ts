@@ -187,20 +187,72 @@ app.get('/joined-events', async (req, res) => {
 
 app.get('/my-events', async (req, res) => {
 
-    const user = await getSessionUser(req)
+  const user = await getSessionUser(req)
 
-    if (!user) {
-        return res.status(401).send({
-            message: "You must be logged in to view your events."
-        })
-    }
+  if (!user) {
+    return res.status(401).send({
+      message: "You must be logged in to view your events."
+    })
+  }
 
-    const result = await eventCollection
+  const result = await eventCollection
     ?.find({ creatorEmail: user.email })
     .sort({ eventDate: 1 })
     .toArray()
 
-    res.send(result)
+  res.send(result)
+})
+
+
+
+app.patch('/update-event/:id', async (req, res) => {
+
+  const user = await getSessionUser(req)
+
+  if (!user) {
+    return res.status(401).send({
+      message: "You must be logged in to update an event."
+    })
+  }
+
+  const { id } = req.params
+
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).send({
+      message: "Invalid event ID."
+    })
+  }
+
+  const { title, eventType, description, image, location, eventDate } = req.body
+
+  const updatedData = {
+    title,
+    eventType,
+    description,
+    image,
+    location,
+    eventDate,
+  }
+
+  const result = await eventCollection?.updateOne(
+    {
+      _id: new ObjectId(id),
+      creatorEmail: user.email
+    },
+    {
+      $set: updatedData
+    }
+  )
+
+  if (result?.matchedCount === 0) {
+    return res.status(404).send({
+      message: "Event not found."
+    })
+  }
+
+  res.send({
+    message: "Event updated successfully."
+  })
 })
 
 
