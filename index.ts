@@ -29,8 +29,26 @@ const getRequiredEnv = (name: string): string => {
 }
 
 const MONGODB_URI = getRequiredEnv("MONGODB_URI")
+
+// CLIENT_URL is the frontend (Next.js) origin. It is used for CORS and for
+// fetching the JWKS public keys, because better-auth runs inside the frontend
+// at <CLIENT_URL>/api/auth.
 const CLIENT_URL = getRequiredEnv("CLIENT_URL").replace(/\/$/, "")
+
+// BETTER_AUTH_URL must be the SAME URL as the frontend app, because that is
+// where better-auth issues the JWTs. The JWT "iss" and "aud" claims are set to
+// this URL, so if this does not match the frontend URL exactly (including
+// http/https and the port), every authenticated request fails with 401.
 const BETTER_AUTH_URL = getRequiredEnv("BETTER_AUTH_URL").replace(/\/$/, "")
+
+if (BETTER_AUTH_URL !== CLIENT_URL) {
+    console.warn(
+        `[config] BETTER_AUTH_URL (${BETTER_AUTH_URL}) and CLIENT_URL (${CLIENT_URL}) ` +
+        "are different. better-auth runs inside the frontend app, so JWTs are " +
+        "issued with issuer/audience set to the frontend URL. If these do not " +
+        "match, every authenticated request will fail with 401."
+    )
+}
 
 
 // ========================================
@@ -173,6 +191,58 @@ const verifyToken: RequestHandler = asyncHandler(
 
         } catch (error) {
             console.error("JWT verification failed:", error)
+
+            const errorCode =
+                typeof error === "object" && error !== null && "code" in error
+                    ? String((error as { code: unknown }).code)
+                    : ""
+
+            // The JWKS public keys could not be downloaded from the frontend.
+            // This almost always means CLIENT_URL points to a URL that is not
+            // running (e.g. localhost while testing the deployed frontend).
+            if (
+                error instanceof TypeError ||
+                errorCode === "ERR_JWKS_FETCH_FAILED" ||
+                errorCode === "ERR_JWKS_INVALID" ||
+                errorCode === "ERR_JWKS_TIMEOUT" ||
+                errorCode === "ERR_JWKS_MULTIPLE_MATCHING_KIDS"
+            ) {
+                console.error(
+                    `Could not load JWKS from ${CLIENT_URL}/api/auth/jwks. ` +
+                    "Check that CLIENT_URL points to the running frontend app."
+                )
+
+                res.status(401).send({
+                    message: "Authentication service is unreachable.",
+                })
+                return
+            }
+
+            if (errorCode === "ERR_JWT_EXPIRED") {
+                res.status(401).send({
+                    message: "Your session has expired. Please log in again.",
+                })
+                return
+            }
+
+            // The token was signed correctly but was issued by a different
+            // better-auth instance than the one configured here.
+            if (
+                errorCode === "ERR_JWT_ISSUER_MISMATCH" ||
+                errorCode === "ERR_JWT_AUDIENCE_MISMATCH"
+            ) {
+                console.error(
+                    `Token issuer/audience mismatch. This server expects ` +
+                    `"${BETTER_AUTH_URL}" but the token was issued by a ` +
+                    "different URL. Set BETTER_AUTH_URL to the frontend app " +
+                    "URL where better-auth runs."
+                )
+
+                res.status(401).send({
+                    message: "Invalid token issuer.",
+                })
+                return
+            }
 
             res.status(401).send({
                 message: "Invalid or expired token.",
