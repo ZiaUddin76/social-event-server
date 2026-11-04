@@ -40,30 +40,29 @@ const eventCollection = db?.collection("event")
 const joinedEvent = db?.collection("joined")
 
 
+const JWKS = createRemoteJWKSet(
+  new URL(`${process.env.CLIENT_URL}/api/auth/jwks`)
+);
+
 const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   
   if(!authHeader) {
-    return res.status(401).send({ msg: "Unauthorized!" });
+    return res.status(401).send({ message: "Unauthorized!" });
   }
 
   const token = authHeader.split(" ")[1]
 
   if(!token) {
-    return res.status(401).send({ msg: "Unauthorized!" });
+    return res.status(401).send({ message: "Unauthorized!" });
   }
-
-
-  const JWKS = createRemoteJWKSet(new URL('http://localhost:3000/api/auth/jwks'))
 
 
   try {
-    const {payload} = await jwtVerify(token, JWKS)
+    await jwtVerify(token, JWKS)
   } catch (error) {
-    return res.status(500).send({ msg: "Server Error!" });
+    return res.status(401).send({ message: "Invalid or expired token." });
   }
-
-
 
   next();
 
@@ -385,7 +384,9 @@ app.get('/joined-events',
 })
 
 
-app.get('/my-events', async (req, res) => {
+app.get('/my-events',
+  verifyToken,
+  async (req, res) => {
 
   const user = await getSessionUser(req)
 
@@ -562,7 +563,9 @@ app.patch('/update-event/:id',
 })
 
 
-app.delete('/delete-event/:id', async (req, res) => {
+app.delete('/delete-event/:id',
+  verifyToken,
+  async (req, res) => {
 
   const user = await getSessionUser(req)
 
