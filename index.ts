@@ -13,7 +13,7 @@ const PORT = 8000
 
 
 app.use(cors({
-  origin: process.env.CLIENT_URL || "http://localhost:3000",
+  origin: process.env.CLIENT_URL,
   credentials: true,
 }))
 app.use(express.json())
@@ -75,8 +75,8 @@ const verifyToken = async (req, res, next) => {
 // so the session cookie created by the web app can be verified here.
 const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
-  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3000",
-  trustedOrigins: [process.env.CLIENT_URL || "http://localhost:3000"],
+  baseURL: process.env.BETTER_AUTH_URL,
+  trustedOrigins: [process.env.CLIENT_URL],
   database: mongodbAdapter(db!, { client: mongoClient! }),
   emailAndPassword: {
     enabled: true,
@@ -625,9 +625,9 @@ app.use((
 })
 
 
-app.listen(PORT, () => {
-  console.log(`Server is running at ${PORT}`)
-})
+// app.listen(PORT, () => {
+//   console.log(`Server is running at ${PORT}`)
+// })
 
 
 export default app

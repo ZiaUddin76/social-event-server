@@ -1,8 +1,9 @@
+
 {
   "name": "social-event-server",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "index.ts",
   "scripts": {
     "dev": "nodemon --exec tsx index.ts"
   },
