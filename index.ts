@@ -1,19 +1,13 @@
-
 import express, {
-  type Request,
-  type Response,
-  type NextFunction,
-  type RequestHandler,
+    type Request,
+    type Response,
+    type NextFunction,
+    type RequestHandler,
 } from "express"
 
 import { MongoClient, ObjectId } from "mongodb"
 import "dotenv/config"
 import cors from "cors"
-
-import { betterAuth } from "better-auth"
-import { mongodbAdapter } from "@better-auth/mongo-adapter"
-import { fromNodeHeaders } from "better-auth/node"
-
 import { createRemoteJWKSet, jwtVerify } from "jose"
 
 
@@ -25,19 +19,18 @@ const app = express()
 // ========================================
 
 const getRequiredEnv = (name: string): string => {
-  const value = process.env[name]
+    const value = process.env[name]
 
-  if (!value) {
-    throw new Error(`Missing environment variable: ${name}`)
-  }
+    if (!value) {
+        throw new Error(`Missing environment variable: ${name}`)
+    }
 
-  return value
+    return value
 }
 
 const MONGODB_URI = getRequiredEnv("MONGODB_URI")
 const CLIENT_URL = getRequiredEnv("CLIENT_URL").replace(/\/$/, "")
-const BETTER_AUTH_URL = getRequiredEnv("BETTER_AUTH_URL")
-const BETTER_AUTH_SECRET = getRequiredEnv("BETTER_AUTH_SECRET")
+const BETTER_AUTH_URL = getRequiredEnv("BETTER_AUTH_URL").replace(/\/$/, "")
 
 
 // ========================================
@@ -45,8 +38,8 @@ const BETTER_AUTH_SECRET = getRequiredEnv("BETTER_AUTH_SECRET")
 // ========================================
 
 app.use(cors({
-  origin: CLIENT_URL,
-  credentials: true,
+    origin: CLIENT_URL,
+    credentials: true,
 }))
 
 app.use(express.json())
@@ -59,18 +52,16 @@ app.use(express.json())
 const client = new MongoClient(MONGODB_URI)
 
 export async function connectToMongoDB() {
-  try {
-    await client.connect()
+    try {
+        await client.connect()
 
-    console.log("You successfully connected to MongoDB!")
+        console.log("You successfully connected to MongoDB!")
 
-    return client
-
-  } catch (err) {
-    console.error("MongoDB connection failed:", err)
-
-    throw err
-  }
+        return client
+    } catch (err) {
+        console.error("MongoDB connection failed:", err)
+        throw err
+    }
 }
 
 const mongoClient = await connectToMongoDB()
@@ -86,17 +77,17 @@ const joinedEvent = db.collection("joined")
 // ========================================
 
 type AsyncRouteHandler = (
-  req: Request,
-  res: Response,
-  next: NextFunction
+    req: Request,
+    res: Response,
+    next: NextFunction
 ) => Promise<void>
 
 const asyncHandler = (
-  handler: AsyncRouteHandler
+    handler: AsyncRouteHandler
 ): RequestHandler => {
-  return (req, res, next) => {
-    handler(req, res, next).catch(next)
-  }
+    return (req, res, next) => {
+        handler(req, res, next).catch(next)
+    }
 }
 
 
@@ -105,12 +96,23 @@ const asyncHandler = (
 // ========================================
 
 const getRouteParam = (
-  req: Request,
-  name: string
+    req: Request,
+    name: string
 ): string => {
-  const value = req.params[name]
+    const value = req.params[name]
 
-  return Array.isArray(value) ? value[0] ?? "" : value ?? ""
+    return Array.isArray(value) ? value[0] ?? "" : value ?? ""
+}
+
+
+// ========================================
+// Authenticated user type
+// ========================================
+
+type AuthenticatedUser = {
+    id: string
+    email: string
+    name: string
 }
 
 
@@ -119,80 +121,78 @@ const getRouteParam = (
 // ========================================
 
 const JWKS = createRemoteJWKSet(
-  new URL(`${CLIENT_URL}/api/auth/jwks`)
+    new URL(`${CLIENT_URL}/api/auth/jwks`)
 )
 
 const verifyToken: RequestHandler = asyncHandler(
-  async (req, res, next) => {
+    async (req, res, next) => {
 
-    const authHeader = req.headers.authorization
+        const authHeader = req.headers.authorization
 
-    if (!authHeader) {
-      res.status(401).send({
-        message: "Unauthorized!",
-      })
-      return
+        if (!authHeader) {
+            res.status(401).send({
+                message: "Unauthorized!",
+            })
+            return
+        }
+
+        const [scheme, token] = authHeader.split(" ")
+
+        if (scheme !== "Bearer" || !token) {
+            res.status(401).send({
+                message: "Invalid authorization header.",
+            })
+            return
+        }
+
+        try {
+            const { payload } = await jwtVerify(token, JWKS, {
+                issuer: BETTER_AUTH_URL,
+                audience: BETTER_AUTH_URL,
+            })
+
+            if (
+                typeof payload.sub !== "string" ||
+                typeof payload.email !== "string"
+            ) {
+                res.status(401).send({
+                    message: "Invalid token payload.",
+                })
+                return
+            }
+
+            const user: AuthenticatedUser = {
+                id: payload.sub,
+                email: payload.email,
+                name: typeof payload.name === "string"
+                    ? payload.name
+                    : "",
+            }
+
+            res.locals.user = user
+
+        } catch (error) {
+            console.error("JWT verification failed:", error)
+
+            res.status(401).send({
+                message: "Invalid or expired token.",
+            })
+            return
+        }
+
+        next()
     }
-
-    const [scheme, token] = authHeader.split(" ")
-
-    if (scheme !== "Bearer" || !token) {
-      res.status(401).send({
-        message: "Invalid authorization header.",
-      })
-      return
-    }
-
-    try {
-      await jwtVerify(token, JWKS)
-
-    } catch (error) {
-      console.error("JWT verification failed:", error)
-
-      res.status(401).send({
-        message: "Invalid or expired token.",
-      })
-      return
-    }
-
-    next()
-  }
 )
-
-
-// ========================================
-// Better Auth configuration
-// ========================================
-
-const auth = betterAuth({
-  secret: BETTER_AUTH_SECRET,
-
-  baseURL: BETTER_AUTH_URL,
-
-  trustedOrigins: [CLIENT_URL],
-
-  database: mongodbAdapter(db, {
-    client: mongoClient,
-  }),
-
-  emailAndPassword: {
-    enabled: true,
-    minPasswordLength: 6,
-    maxPasswordLength: 128,
-  },
-})
 
 
 // ========================================
 // Get logged-in user
 // ========================================
 
-const getSessionUser = async (req: Request) => {
-  const session = await auth.api.getSession({
-    headers: fromNodeHeaders(req.headers),
-  })
-
-  return session?.user ?? null
+const getSessionUser = (
+    res: Response
+): AuthenticatedUser | null => {
+    return res.locals.user ?? null
 }
 
 
@@ -202,66 +202,66 @@ const getSessionUser = async (req: Request) => {
 
 const isValidImageUrl = (image: unknown): image is string => {
 
-  if (typeof image !== "string" || !image.trim()) {
-    return false
-  }
+    if (typeof image !== "string" || !image.trim()) {
+        return false
+    }
 
-  try {
-    const imageUrl = new URL(image.trim())
+    try {
+        const imageUrl = new URL(image.trim())
 
-    return (
-      imageUrl.protocol === "http:" ||
-      imageUrl.protocol === "https:"
-    )
+        return (
+            imageUrl.protocol === "http:" ||
+            imageUrl.protocol === "https:"
+        )
 
-  } catch {
-    return false
-  }
+    } catch {
+        return false
+    }
 }
 
 
 const isValidEventDate = (eventDate: unknown): eventDate is string => {
 
-  if (
-    typeof eventDate !== "string" ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(eventDate)
-  ) {
-    return false
-  }
+    if (
+        typeof eventDate !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(eventDate)
+    ) {
+        return false
+    }
 
-  const [year, month, day] = eventDate.split("-").map(Number)
+    const [year, month, day] = eventDate.split("-").map(Number)
 
-  const selectedDate = new Date(
-    Date.UTC(year, month - 1, day)
-  )
+    const selectedDate = new Date(
+        Date.UTC(year, month - 1, day)
+    )
 
-  const isValidDate =
-    selectedDate.getUTCFullYear() === year &&
-    selectedDate.getUTCMonth() === month - 1 &&
-    selectedDate.getUTCDate() === day
+    const isValidDate =
+        selectedDate.getUTCFullYear() === year &&
+        selectedDate.getUTCMonth() === month - 1 &&
+        selectedDate.getUTCDate() === day
 
-  const tomorrow = new Date()
+    const tomorrow = new Date()
 
-  tomorrow.setDate(tomorrow.getDate() + 1)
+    tomorrow.setDate(tomorrow.getDate() + 1)
 
-  const minimumDate = [
-    tomorrow.getFullYear(),
-    String(tomorrow.getMonth() + 1).padStart(2, "0"),
-    String(tomorrow.getDate()).padStart(2, "0"),
-  ].join("-")
+    const minimumDate = [
+        tomorrow.getFullYear(),
+        String(tomorrow.getMonth() + 1).padStart(2, "0"),
+        String(tomorrow.getDate()).padStart(2, "0"),
+    ].join("-")
 
-  return isValidDate && eventDate >= minimumDate
+    return isValidDate && eventDate >= minimumDate
 }
 
 
 const eventTypes = [
-  "Cleanup",
-  "Plantation",
-  "Donation",
-  "Awareness",
-  "Community Service",
-  "Education",
-  "Other",
+    "Cleanup",
+    "Plantation",
+    "Donation",
+    "Awareness",
+    "Community Service",
+    "Education",
+    "Other",
 ]
 
 
@@ -270,102 +270,102 @@ const eventTypes = [
 // ========================================
 
 app.post(
-  "/create-event",
-  verifyToken,
-  asyncHandler(async (req, res) => {
+    "/create-event",
+    verifyToken,
+    asyncHandler(async (req, res) => {
 
-    const user = await getSessionUser(req)
+        const user = getSessionUser(res)
 
-    if (!user) {
-      res.status(401).send({
-        message: "You must be logged in to create an event.",
-      })
-      return
-    }
+        if (!user) {
+            res.status(401).send({
+                message: "You must be logged in to create an event.",
+            })
+            return
+        }
 
-    const {
-      title,
-      eventType,
-      description,
-      image,
-      location,
-      eventDate,
-    } = req.body
+        const {
+            title,
+            eventType,
+            description,
+            image,
+            location,
+            eventDate,
+        } = req.body
 
-    if (
-      typeof title !== "string" ||
-      title.trim().length < 5 ||
-      title.trim().length > 100
-    ) {
-      res.status(400).send({
-        message: "Title must be between 5 and 100 characters.",
-      })
-      return
-    }
+        if (
+            typeof title !== "string" ||
+            title.trim().length < 5 ||
+            title.trim().length > 100
+        ) {
+            res.status(400).send({
+                message: "Title must be between 5 and 100 characters.",
+            })
+            return
+        }
 
-    if (
-      typeof eventType !== "string" ||
-      !eventTypes.includes(eventType)
-    ) {
-      res.status(400).send({
-        message: "Please select a valid event type.",
-      })
-      return
-    }
+        if (
+            typeof eventType !== "string" ||
+            !eventTypes.includes(eventType)
+        ) {
+            res.status(400).send({
+                message: "Please select a valid event type.",
+            })
+            return
+        }
 
-    if (
-      typeof description !== "string" ||
-      description.trim().length < 20 ||
-      description.trim().length > 1000
-    ) {
-      res.status(400).send({
-        message: "Description must be between 20 and 1000 characters.",
-      })
-      return
-    }
+        if (
+            typeof description !== "string" ||
+            description.trim().length < 20 ||
+            description.trim().length > 1000
+        ) {
+            res.status(400).send({
+                message: "Description must be between 20 and 1000 characters.",
+            })
+            return
+        }
 
-    if (
-      typeof location !== "string" ||
-      location.trim().length < 3 ||
-      location.trim().length > 150
-    ) {
-      res.status(400).send({
-        message: "Location must be between 3 and 150 characters.",
-      })
-      return
-    }
+        if (
+            typeof location !== "string" ||
+            location.trim().length < 3 ||
+            location.trim().length > 150
+        ) {
+            res.status(400).send({
+                message: "Location must be between 3 and 150 characters.",
+            })
+            return
+        }
 
-    if (!isValidImageUrl(image)) {
-      res.status(400).send({
-        message: "Please provide a valid image URL.",
-      })
-      return
-    }
+        if (!isValidImageUrl(image)) {
+            res.status(400).send({
+                message: "Please provide a valid image URL.",
+            })
+            return
+        }
 
-    if (!isValidEventDate(eventDate)) {
-      res.status(400).send({
-        message: "Event date must be tomorrow or later.",
-      })
-      return
-    }
+        if (!isValidEventDate(eventDate)) {
+            res.status(400).send({
+                message: "Event date must be tomorrow or later.",
+            })
+            return
+        }
 
-    const data = {
-      title: title.trim(),
-      eventType,
-      description: description.trim(),
-      image: image.trim(),
-      location: location.trim(),
-      eventDate,
-      creatorEmail: user.email,
-      createdAt: new Date().toISOString(),
-    }
+        const data = {
+            title: title.trim(),
+            eventType,
+            description: description.trim(),
+            image: image.trim(),
+            location: location.trim(),
+            eventDate,
+            creatorEmail: user.email,
+            createdAt: new Date().toISOString(),
+        }
 
-    const result = await eventCollection.insertOne(data)
+        const result = await eventCollection.insertOne(data)
 
-    console.log(result)
+        console.log(result)
 
-    res.status(201).send(result)
-  })
+        res.status(201).send(result)
+    })
 )
 
 
@@ -374,28 +374,28 @@ app.post(
 // ========================================
 
 app.get(
-  "/events",
-  asyncHandler(async (req, res) => {
+    "/events",
+    asyncHandler(async (req, res) => {
 
-    const today = new Date()
+        const today = new Date()
 
-    today.setHours(0, 0, 0, 0)
+        today.setHours(0, 0, 0, 0)
 
-    const todayString = [
-      today.getFullYear(),
-      String(today.getMonth() + 1).padStart(2, "0"),
-      String(today.getDate()).padStart(2, "0"),
-    ].join("-")
+        const todayString = [
+            today.getFullYear(),
+            String(today.getMonth() + 1).padStart(2, "0"),
+            String(today.getDate()).padStart(2, "0"),
+        ].join("-")
 
-    const result = await eventCollection
-      .find({
-        eventDate: { $gte: todayString },
-      })
-      .sort({ eventDate: 1 })
-      .toArray()
+        const result = await eventCollection
+            .find({
+                eventDate: { $gte: todayString },
+            })
+            .sort({ eventDate: 1 })
+            .toArray()
 
-    res.send(result)
-  })
+        res.send(result)
+    })
 )
 
 
@@ -404,31 +404,31 @@ app.get(
 // ========================================
 
 app.get(
-  "/event/:id",
-  asyncHandler(async (req, res) => {
+    "/event/:id",
+    asyncHandler(async (req, res) => {
 
-    const id = getRouteParam(req, "id")
+        const id = getRouteParam(req, "id")
 
-    if (!ObjectId.isValid(id)) {
-      res.status(400).send({
-        message: "Invalid event ID.",
-      })
-      return
-    }
+        if (!ObjectId.isValid(id)) {
+            res.status(400).send({
+                message: "Invalid event ID.",
+            })
+            return
+        }
 
-    const result = await eventCollection.findOne({
-      _id: new ObjectId(id),
+        const result = await eventCollection.findOne({
+            _id: new ObjectId(id),
+        })
+
+        if (!result) {
+            res.status(404).send({
+                message: "Event not found.",
+            })
+            return
+        }
+
+        res.send(result)
     })
-
-    if (!result) {
-      res.status(404).send({
-        message: "Event not found.",
-      })
-      return
-    }
-
-    res.send(result)
-  })
 )
 
 
@@ -437,68 +437,68 @@ app.get(
 // ========================================
 
 app.post(
-  "/join-event",
-  verifyToken,
-  asyncHandler(async (req, res) => {
+    "/join-event",
+    verifyToken,
+    asyncHandler(async (req, res) => {
 
-    const user = await getSessionUser(req)
+        const user = getSessionUser(res)
 
-    if (!user) {
-      res.status(401).send({
-        message: "You must be logged in to join this event.",
-      })
-      return
-    }
+        if (!user) {
+            res.status(401).send({
+                message: "You must be logged in to join this event.",
+            })
+            return
+        }
 
-    const { eventId } = req.body as {
-      eventId?: string
-    }
+        const { eventId } = req.body as {
+            eventId?: string
+        }
 
-    if (!eventId || !ObjectId.isValid(eventId)) {
-      res.status(400).send({
-        message: "Invalid event id.",
-      })
-      return
-    }
+        if (!eventId || !ObjectId.isValid(eventId)) {
+            res.status(400).send({
+                message: "Invalid event id.",
+            })
+            return
+        }
 
-    const event = await eventCollection.findOne({
-      _id: new ObjectId(eventId),
+        const event = await eventCollection.findOne({
+            _id: new ObjectId(eventId),
+        })
+
+        if (!event) {
+            res.status(404).send({
+                message: "Event not found.",
+            })
+            return
+        }
+
+        const alreadyJoined = await joinedEvent.findOne({
+            eventId,
+            userId: user.id,
+        })
+
+        if (alreadyJoined) {
+            res.status(409).send({
+                message: "You have already joined this event.",
+            })
+            return
+        }
+
+        const result = await joinedEvent.insertOne({
+            eventId,
+            eventTitle: event.title,
+            eventDate: event.eventDate,
+            eventType: event.eventType,
+            location: event.location,
+            userId: user.id,
+            userName: user.name,
+            userEmail: user.email,
+            joinedAt: new Date().toISOString(),
+            image: event.image,
+        })
+
+        res.status(201).send(result)
     })
-
-    if (!event) {
-      res.status(404).send({
-        message: "Event not found.",
-      })
-      return
-    }
-
-    const alreadyJoined = await joinedEvent.findOne({
-      eventId,
-      userId: user.id,
-    })
-
-    if (alreadyJoined) {
-      res.status(409).send({
-        message: "You have already joined this event.",
-      })
-      return
-    }
-
-    const result = await joinedEvent.insertOne({
-      eventId,
-      eventTitle: event.title,
-      eventDate: event.eventDate,
-      eventType: event.eventType,
-      location: event.location,
-      userId: user.id,
-      userName: user.name,
-      userEmail: user.email,
-      joinedAt: new Date().toISOString(),
-      image: event.image,
-    })
-
-    res.status(201).send(result)
-  })
 )
 
 
@@ -507,37 +507,37 @@ app.post(
 // ========================================
 
 app.get(
-  "/event/:id/joined",
-  verifyToken,
-  asyncHandler(async (req, res) => {
+    "/event/:id/joined",
+    verifyToken,
+    asyncHandler(async (req, res) => {
 
-    const user = await getSessionUser(req)
+        const user = getSessionUser(res)
 
-    if (!user) {
-      res.status(401).send({
-        joined: false,
-      })
-      return
-    }
+        if (!user) {
+            res.status(401).send({
+                joined: false,
+            })
+            return
+        }
 
-    const id = getRouteParam(req, "id")
+        const id = getRouteParam(req, "id")
 
-    if (!ObjectId.isValid(id)) {
-      res.status(400).send({
-        message: "Invalid event ID.",
-      })
-      return
-    }
+        if (!ObjectId.isValid(id)) {
+            res.status(400).send({
+                message: "Invalid event ID.",
+            })
+            return
+        }
 
-    const joined = await joinedEvent.findOne({
-      eventId: id,
-      userId: user.id,
+        const joined = await joinedEvent.findOne({
+            eventId: id,
+            userId: user.id,
+        })
+
+        res.send({
+            joined: Boolean(joined),
+        })
     })
-
-    res.send({
-      joined: Boolean(joined),
-    })
-  })
 )
 
 
@@ -546,28 +546,28 @@ app.get(
 // ========================================
 
 app.get(
-  "/joined-events",
-  verifyToken,
-  asyncHandler(async (req, res) => {
+    "/joined-events",
+    verifyToken,
+    asyncHandler(async (req, res) => {
 
-    const user = await getSessionUser(req)
+        const user = getSessionUser(res)
 
-    if (!user) {
-      res.status(401).send({
-        message: "You must be logged in to view your joined events.",
-      })
-      return
-    }
+        if (!user) {
+            res.status(401).send({
+                message: "You must be logged in to view your joined events.",
+            })
+            return
+        }
 
-    const result = await joinedEvent
-      .find({
-        userId: user.id,
-      })
-      .sort({ joinedAt: -1 })
-      .toArray()
+        const result = await joinedEvent
+            .find({
+                userId: user.id,
+            })
+            .sort({ joinedAt: -1 })
+            .toArray()
 
-    res.send(result)
-  })
+        res.send(result)
+    })
 )
 
 
@@ -576,28 +576,28 @@ app.get(
 // ========================================
 
 app.get(
-  "/my-events",
-  verifyToken,
-  asyncHandler(async (req, res) => {
+    "/my-events",
+    verifyToken,
+    asyncHandler(async (req, res) => {
 
-    const user = await getSessionUser(req)
+        const user = getSessionUser(res)
 
-    if (!user) {
-      res.status(401).send({
-        message: "You must be logged in to view your events.",
-      })
-      return
-    }
+        if (!user) {
+            res.status(401).send({
+                message: "You must be logged in to view your events.",
+            })
+            return
+        }
 
-    const result = await eventCollection
-      .find({
-        creatorEmail: user.email,
-      })
-      .sort({ eventDate: 1 })
-      .toArray()
+        const result = await eventCollection
+            .find({
+                creatorEmail: user.email,
+            })
+            .sort({ eventDate: 1 })
+            .toArray()
 
-    res.send(result)
-  })
+        res.send(result)
+    })
 )
 
 
@@ -606,124 +606,124 @@ app.get(
 // ========================================
 
 app.patch(
-  "/update-event/:id",
-  verifyToken,
-  asyncHandler(async (req, res) => {
+    "/update-event/:id",
+    verifyToken,
+    asyncHandler(async (req, res) => {
 
-    const user = await getSessionUser(req)
+        const user = getSessionUser(res)
 
-    if (!user) {
-      res.status(401).send({
-        message: "You must be logged in to update an event.",
-      })
-      return
-    }
+        if (!user) {
+            res.status(401).send({
+                message: "You must be logged in to update an event.",
+            })
+            return
+        }
 
-    const id = getRouteParam(req, "id")
+        const id = getRouteParam(req, "id")
 
-    if (!ObjectId.isValid(id)) {
-      res.status(400).send({
-        message: "Invalid event ID.",
-      })
-      return
-    }
+        if (!ObjectId.isValid(id)) {
+            res.status(400).send({
+                message: "Invalid event ID.",
+            })
+            return
+        }
 
-    const {
-      title,
-      eventType,
-      description,
-      image,
-      location,
-      eventDate,
-    } = req.body
+        const {
+            title,
+            eventType,
+            description,
+            image,
+            location,
+            eventDate,
+        } = req.body
 
-    if (
-      typeof title !== "string" ||
-      title.trim().length < 5 ||
-      title.trim().length > 100
-    ) {
-      res.status(400).send({
-        message: "Title must be between 5 and 100 characters.",
-      })
-      return
-    }
+        if (
+            typeof title !== "string" ||
+            title.trim().length < 5 ||
+            title.trim().length > 100
+        ) {
+            res.status(400).send({
+                message: "Title must be between 5 and 100 characters.",
+            })
+            return
+        }
 
-    if (
-      typeof eventType !== "string" ||
-      !eventTypes.includes(eventType)
-    ) {
-      res.status(400).send({
-        message: "Invalid event type.",
-      })
-      return
-    }
+        if (
+            typeof eventType !== "string" ||
+            !eventTypes.includes(eventType)
+        ) {
+            res.status(400).send({
+                message: "Invalid event type.",
+            })
+            return
+        }
 
-    if (
-      typeof description !== "string" ||
-      description.trim().length < 20 ||
-      description.trim().length > 1000
-    ) {
-      res.status(400).send({
-        message: "Description must be between 20 and 1000 characters.",
-      })
-      return
-    }
+        if (
+            typeof description !== "string" ||
+            description.trim().length < 20 ||
+            description.trim().length > 1000
+        ) {
+            res.status(400).send({
+                message: "Description must be between 20 and 1000 characters.",
+            })
+            return
+        }
 
-    if (
-      typeof location !== "string" ||
-      location.trim().length < 3 ||
-      location.trim().length > 150
-    ) {
-      res.status(400).send({
-        message: "Location must be between 3 and 150 characters.",
-      })
-      return
-    }
+        if (
+            typeof location !== "string" ||
+            location.trim().length < 3 ||
+            location.trim().length > 150
+        ) {
+            res.status(400).send({
+                message: "Location must be between 3 and 150 characters.",
+            })
+            return
+        }
 
-    if (!isValidImageUrl(image)) {
-      res.status(400).send({
-        message: "Please provide a valid image URL.",
-      })
-      return
-    }
+        if (!isValidImageUrl(image)) {
+            res.status(400).send({
+                message: "Please provide a valid image URL.",
+            })
+            return
+        }
 
-    if (!isValidEventDate(eventDate)) {
-      res.status(400).send({
-        message: "Event date must be tomorrow or later.",
-      })
-      return
-    }
+        if (!isValidEventDate(eventDate)) {
+            res.status(400).send({
+                message: "Event date must be tomorrow or later.",
+            })
+            return
+        }
 
-    const updatedData = {
-      title: title.trim(),
-      eventType,
-      description: description.trim(),
-      image: image.trim(),
-      location: location.trim(),
-      eventDate,
-    }
+        const updatedData = {
+            title: title.trim(),
+            eventType,
+            description: description.trim(),
+            image: image.trim(),
+            location: location.trim(),
+            eventDate,
+        }
 
-    const result = await eventCollection.updateOne(
-      {
-        _id: new ObjectId(id),
-        creatorEmail: user.email,
-      },
-      {
-        $set: updatedData,
-      }
-    )
+        const result = await eventCollection.updateOne(
+            {
+                _id: new ObjectId(id),
+                creatorEmail: user.email,
+            },
+            {
+                $set: updatedData,
+            }
+        )
 
-    if (result.matchedCount === 0) {
-      res.status(404).send({
-        message: "Event not found.",
-      })
-      return
-    }
+        if (result.matchedCount === 0) {
+            res.status(404).send({
+                message: "Event not found.",
+            })
+            return
+        }
 
-    res.send({
-      message: "Event updated successfully.",
+        res.send({
+            message: "Event updated successfully.",
+        })
     })
-  })
 )
 
 
@@ -732,48 +732,48 @@ app.patch(
 // ========================================
 
 app.delete(
-  "/delete-event/:id",
-  verifyToken,
-  asyncHandler(async (req, res) => {
+    "/delete-event/:id",
+    verifyToken,
+    asyncHandler(async (req, res) => {
 
-    const user = await getSessionUser(req)
+        const user = getSessionUser(res)
 
-    if (!user) {
-      res.status(401).send({
-        message: "You must be logged in to delete an event.",
-      })
-      return
-    }
+        if (!user) {
+            res.status(401).send({
+                message: "You must be logged in to delete an event.",
+            })
+            return
+        }
 
-    const id = getRouteParam(req, "id")
+        const id = getRouteParam(req, "id")
 
-    if (!ObjectId.isValid(id)) {
-      res.status(400).send({
-        message: "Invalid event ID.",
-      })
-      return
-    }
+        if (!ObjectId.isValid(id)) {
+            res.status(400).send({
+                message: "Invalid event ID.",
+            })
+            return
+        }
 
-    const result = await eventCollection.deleteOne({
-      _id: new ObjectId(id),
-      creatorEmail: user.email,
+        const result = await eventCollection.deleteOne({
+            _id: new ObjectId(id),
+            creatorEmail: user.email,
+        })
+
+        if (result.deletedCount === 0) {
+            res.status(404).send({
+                message: "Event not found.",
+            })
+            return
+        }
+
+        await joinedEvent.deleteMany({
+            eventId: id,
+        })
+
+        res.send({
+            message: "Event deleted successfully.",
+        })
     })
-
-    if (result.deletedCount === 0) {
-      res.status(404).send({
-        message: "Event not found.",
-      })
-      return
-    }
-
-    await joinedEvent.deleteMany({
-      eventId: id,
-    })
-
-    res.send({
-      message: "Event deleted successfully.",
-    })
-  })
 )
 
 
@@ -782,48 +782,43 @@ app.delete(
 // ========================================
 
 app.get("/", (req, res) => {
-  res.send({
-    message: "Server is running fine",
-  })
+    res.send({
+        message: "Server is running fine",
+    })
 })
 
 
 // ========================================
-// GLOBAL ERROR HANDLER
+// Error handler
 // ========================================
 
 app.use((
-  err: Error,
-  req: Request,
-  res: Response,
-  next: NextFunction
+    error: Error,
+    req: Request,
+    res: Response,
+    next: NextFunction
 ) => {
+    console.error("Server error:", error)
 
-  console.error("Server Error:", err)
+    if (res.headersSent) {
+        next(error)
+        return
+    }
 
-  if (res.headersSent) {
-    return next(err)
-  }
-
-  res.status(500).send({
-    message: "Internal server error.",
-  })
+    res.status(500).send({
+        message: "Internal server error.",
+    })
 })
 
 
 // ========================================
-// LOCAL DEVELOPMENT SERVER
+// Local server
 // ========================================
 
 if (process.env.NODE_ENV !== "production") {
-  app.listen(8000, () => {
-    console.log("Server running on port 8000")
-  })
+    app.listen(8000, () => {
+        console.log("Server running on port 8000")
+    })
 }
-
-
-// ========================================
-// VERCEL EXPORT
-// ========================================
 
 export default app
