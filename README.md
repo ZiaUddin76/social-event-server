@@ -24,23 +24,26 @@ This repository contains the backend server of EventHub, responsible for managin
 
 ## 🛠️ Technologies Used
 
-- Node.js
-- Express.js
-- MongoDB
-- Better Auth
-- JSON Web Token (JWT)
-- TypeScript / JavaScript (depending on the server implementation)
-- Vercel
+- **Node.js** – JavaScript runtime environment.
+- **TypeScript** – Type-safe development.
+- **Express.js 5** – Backend web framework.
+- **MongoDB 7** – Database.
+- **Better Auth** – Authentication and session management.
+- **JOSE** – JWT-related operations.
+- **CORS** – Cross-origin resource sharing.
+- **Dotenv** – Environment variable management.
+- **tsx** – TypeScript execution.
+- **Nodemon** – Automatic server restart during development.
+- **Vercel** – Deployment platform.
 
-## 📂 Repository
+## 📂 Repositories
 
-**Client (Frontend):** https://github.com/ZiaUddin76/social-event
-
-**Server (Backend):** https://github.com/ZiaUddin76/social-event-server
+- **Client (Frontend):** https://github.com/ZiaUddin76/social-event
+- **Server (Backend):** https://github.com/ZiaUddin76/social-event-server
 
 ## ⚙️ Environment Variables
 
-Create a `.env` file in the root directory and configure the following variables:
+Create a `.env` file in the root directory and configure the required environment variables.
 
 ```env
 PORT=8000
@@ -50,31 +53,33 @@ BETTER_AUTH_SECRET=your_better_auth_secret
 BETTER_AUTH_URL=your_better_auth_url
 ```
 
-Make sure to configure all required authentication and database environment variables before running the server.
+Configure all required environment variables according to your server implementation. Never commit your actual secrets to GitHub.
 
 ## 🚀 Run Locally
 
-1. Clone the repository:
+**1. Clone the repository**
 
 ```bash
 git clone https://github.com/ZiaUddin76/social-event-server.git
 ```
 
-2. Navigate to the project directory:
+**2. Navigate to the project directory**
 
 ```bash
 cd social-event-server
 ```
 
-3. Install dependencies:
+**3. Install dependencies**
 
 ```bash
 npm install
 ```
 
-4. Configure your environment variables in the `.env` file.
+**4. Configure environment variables**
 
-5. Start the development server:
+Create a `.env` file and add your required configuration.
+
+**5. Start the development server**
 
 ```bash
 npm run dev
@@ -85,7 +90,7 @@ npm run dev
 - Protected API routes require valid authentication.
 - JWT is used for verifying authenticated requests.
 - Sensitive configuration values are stored in environment variables.
-- Database operations are handled securely through MongoDB.
+- Database operations are handled through MongoDB.
 
 ---
 
