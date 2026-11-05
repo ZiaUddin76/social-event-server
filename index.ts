@@ -469,6 +469,39 @@ app.get(
 )
 
 
+
+// ========================================
+// GET 6 RECENT UPCOMING EVENTS
+// ========================================
+
+app.get(
+    "/recent-events",
+    asyncHandler(async (req, res) => {
+
+        const today = new Date()
+
+        today.setHours(0, 0, 0, 0)
+
+        const todayString = [
+            today.getFullYear(),
+            String(today.getMonth() + 1).padStart(2, "0"),
+            String(today.getDate()).padStart(2, "0"),
+        ].join("-")
+
+        const result = await eventCollection
+            .find({
+                eventDate: { $gte: todayString },
+            })
+            .sort({ eventDate: 1 })
+            .limit(6)
+            .toArray()
+
+        res.send(result)
+    })
+)
+
+
+
 // ========================================
 // GET SINGLE EVENT
 // ========================================
